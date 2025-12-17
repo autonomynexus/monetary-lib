@@ -1,0 +1,313 @@
+# monetary-lib
+
+> TypeScript library for precise monetary calculations with full currency support
+
+## Overview
+
+monetary-lib provides precise monetary arithmetic using three calculation backends (number, bigint, Big.js). All monetary objects are plain POJOs for full Next.js/JSON serialization compatibility.
+
+## Installation
+
+```bash
+pnpm add monetary-lib
+```
+
+## Quick Start
+
+```typescript
+import { monetary, add, USD, EUR } from "monetary-lib";
+
+// Create monetary objects (amounts in minor units)
+const price = monetary({ amount: 1000, currency: USD }); // $10.00
+const tax = monetary({ amount: 100, currency: USD });    // $1.00
+
+// Arithmetic
+const total = add(price, tax); // { amount: 1100, currency: USD, scale: 2 }
+```
+
+## Core Concepts
+
+### Monetary Object
+
+Plain object with `amount`, `currency`, and `scale`:
+
+```typescript
+type Monetary<TAmount> = {
+  readonly amount: TAmount;      // Integer in minor units
+  readonly currency: Currency<TAmount>;
+  readonly scale: TAmount;       // Decimal places (default: currency exponent)
+}
+```
+
+### Scale
+
+Scale = number of decimal places. USD with scale 2: amount 1050 = $10.50
+
+### Currency
+
+```typescript
+type Currency<TAmount> = {
+  readonly code: string;         // "USD", "EUR"
+  readonly base: TAmount;        // Usually 10
+  readonly exponent: TAmount;    // Decimal places (2 for USD, 0 for JPY)
+}
+```
+
+## API Reference
+
+### Factory
+
+**`monetary(options)`** - Create monetary object
+```typescript
+monetary({ amount: 1000, currency: USD })           // scale defaults to currency.exponent
+monetary({ amount: 10545, currency: USD, scale: 3 }) // custom scale
+```
+
+### Arithmetic
+
+**`add(a, b)`** - Add two monetary objects (same currency)
+```typescript
+add(monetary({ amount: 500, currency: USD }), monetary({ amount: 100, currency: USD }))
+// { amount: 600, currency: USD, scale: 2 }
+```
+
+**`subtract(a, b)`** - Subtract monetary objects
+```typescript
+subtract(monetary({ amount: 500, currency: USD }), monetary({ amount: 100, currency: USD }))
+// { amount: 400, currency: USD, scale: 2 }
+```
+
+**`multiply(m, scalar)`** - Multiply by number or scaled amount
+```typescript
+multiply(monetary({ amount: 400, currency: USD }), 4)
+// { amount: 1600, currency: USD, scale: 2 }
+
+multiply(monetary({ amount: 401, currency: USD }), { amount: 2001, scale: 3 })
+// { amount: 802401, currency: USD, scale: 5 }
+```
+
+### Comparison
+
+**`compare(a, b)`** - Returns -1, 0, or 1
+```typescript
+compare(d1, d2) // -1 (d1 < d2), 0 (equal), 1 (d1 > d2)
+```
+
+**`equal(a, b)`** - Check equality (normalizes scales)
+```typescript
+equal(monetary({ amount: 500, currency: USD }), monetary({ amount: 5000, currency: USD, scale: 3 }))
+// true (both equal $5.00)
+```
+
+**`greaterThan(a, b)`**, **`lessThan(a, b)`**, **`greaterThanOrEqual(a, b)`**, **`lessThanOrEqual(a, b)`**
+
+### Allocation
+
+**`allocate(m, ratios)`** - Distribute by ratios
+```typescript
+allocate(monetary({ amount: 1003, currency: USD }), [50, 50])
+// [{ amount: 502 }, { amount: 501 }] - remainder distributed
+
+allocate(monetary({ amount: 100, currency: USD }), [1, 3])
+// [{ amount: 25 }, { amount: 75 }]
+```
+
+### Conversion
+
+**`convert(m, currency, rates)`** - Currency conversion
+```typescript
+convert(monetary({ amount: 500, currency: USD }), EUR, { EUR: { amount: 89, scale: 2 } })
+```
+
+### Formatting
+
+**`toDecimal(m, transformer?)`** - Convert to decimal string
+```typescript
+toDecimal(monetary({ amount: 1050, currency: USD }))
+// "10.50"
+
+toDecimal(m, ({ value, currency }) => `${currency.code} ${value}`)
+// "USD 10.50"
+```
+
+**`toSnapshot(m)`** - Return serializable snapshot
+
+### Scale Management
+
+**`normalizeScale([m1, m2])`** - Normalize to highest scale
+**`transformScale(m, newScale, divideOp?)`** - Change scale with rounding
+**`trimScale(m)`** - Remove trailing zeros
+
+### Predicates
+
+**`isZero(m)`**, **`isPositive(m)`**, **`isNegative(m)`**, **`hasSubUnits(m)`**
+
+### Aggregation
+
+**`maximum([m1, m2, ...])`**, **`minimum([m1, m2, ...])`**
+
+### Checks
+
+**`haveSameCurrency([m1, m2])`**, **`haveSameAmount([m1, m2])`**
+
+## Rounding Strategies
+
+Use with `transformScale`:
+
+```typescript
+import { transformScale, down, up, halfUp, halfDown, halfEven } from "monetary-lib";
+
+transformScale(m, 2, halfUp)   // Round 0.5 away from zero
+transformScale(m, 2, halfEven) // Banker's rounding
+```
+
+Available: `down`, `up`, `halfUp`, `halfDown`, `halfEven`, `halfOdd`, `halfAwayFromZero`, `halfTowardsZero`
+
+## Calculators
+
+Three backends with identical APIs:
+
+```typescript
+import { numberCalculator, bigintCalculator, bigjsCalculator } from "monetary-lib";
+```
+
+**number** - Native JS (fastest, limited precision)
+**bigint** - Arbitrary precision integers
+**bigjs** - Arbitrary precision decimals (requires big.js)
+
+### Custom Calculator Usage
+
+```typescript
+import { createMonetary } from "monetary-lib";
+import { calculator } from "monetary-lib/calculator-bigint";
+
+const m = monetary({ amount: 1000000000000000050n, currency: USD });
+```
+
+## Currencies
+
+190+ ISO 4217 currencies (Amendment 168):
+
+```typescript
+import { USD, EUR, GBP, JPY, CAD, AUD, CHF } from "monetary-lib";
+```
+
+Custom currency:
+```typescript
+const XYZ = { code: "XYZ", base: 10, exponent: 2 };
+```
+
+## Types
+
+```typescript
+import type {
+  Monetary,
+  MonetarySnapshot,
+  MonetaryOptions,
+  MonetaryFactory,
+  Currency,
+  Calculator,
+  ComparisonOperator,
+  DivideOperation,
+  Formatter,
+  Transformer,
+  ScaledAmount,
+  Rate,
+  Rates,
+} from "monetary-lib";
+```
+
+### Key Types
+
+```typescript
+type MonetaryOptions<TAmount> = {
+  readonly amount: TAmount;
+  readonly currency: Currency<TAmount>;
+  readonly scale?: TAmount;
+}
+
+type ScaledAmount<TAmount> = {
+  readonly amount: TAmount;
+  readonly scale: TAmount;
+}
+
+type Rates<TAmount> = Record<string, Rate<TAmount>>;
+type Rate<TAmount> = ScaledAmount<TAmount> | TAmount;
+```
+
+## Serialization
+
+Monetary objects are plain POJOs - fully serializable:
+
+```typescript
+// Next.js getServerSideProps compatible
+const price = monetary({ amount: 1000, currency: USD });
+const serialized = JSON.parse(JSON.stringify(price));
+add(serialized, tax); // Works after serialization
+```
+
+## Error Handling
+
+```typescript
+// Different currencies
+add(usd, eur); // Throws: "[Monetary] Objects must have the same currency"
+
+// Invalid allocation
+allocate(m, []);        // Throws: "Ratios are invalid"
+allocate(m, [-50, -50]); // Throws: "Ratios are invalid"
+
+// Non-decimal currency
+toDecimal(mga);          // Throws: "Currency is not decimal"
+```
+
+## Project Structure
+
+```
+src/
+├── index.ts              # Main exports
+├── monetary.ts           # Factory function
+├── api/                  # Core operations (calculator-agnostic)
+├── api-overrides/        # Public API with auto-detection
+├── calculator-number/    # Native number backend
+├── calculator-bigint/    # BigInt backend
+├── calculator-bigjs/     # Big.js backend
+├── currencies/           # ISO 4217 definitions
+├── divide/               # Rounding strategies
+├── types/                # TypeScript definitions
+├── helpers/              # Utilities
+└── utils/                # Internal utilities
+```
+
+## Examples
+
+### Split Bill
+
+```typescript
+const bill = monetary({ amount: 10000, currency: USD }); // $100.00
+const shares = allocate(bill, [1, 1, 1]); // Split 3 ways
+// [{ amount: 3334 }, { amount: 3333 }, { amount: 3333 }]
+```
+
+### Tax Calculation
+
+```typescript
+const price = monetary({ amount: 9999, currency: USD });
+const taxRate = { amount: 825, scale: 4 }; // 8.25%
+const tax = multiply(price, taxRate);
+const total = add(price, tax);
+```
+
+### Multi-Currency
+
+```typescript
+const usd = monetary({ amount: 10000, currency: USD });
+const eur = convert(usd, EUR, { EUR: { amount: 92, scale: 2 } });
+```
+
+### Percentage Discount
+
+```typescript
+const price = monetary({ amount: 5000, currency: USD });
+const discount = multiply(price, { amount: 15, scale: 2 }); // 15%
+const final = subtract(price, discount);
+```
